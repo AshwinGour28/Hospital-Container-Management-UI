@@ -1,6 +1,7 @@
 import { model } from "mongoose";
 import Container from "../models/Container.js"
 import docker from "../docker/dockerClient.js";
+import { getContainerStats } from "../utils/dockerStats.js";
 
 export const createContainer = async (req, res) => {
     try{
@@ -36,25 +37,62 @@ export const createContainer = async (req, res) => {
 export const getAllContainers = async(req, res) => {
     try{
         const containers = await Container.find();
-        res.status(200).json(containers);
+
+        const containerWithStatus = await Promise.all(
+            containers.map(async (container)=>{
+                try{
+                    const dockerContainer = docker.getContainer(container.name.toLowerCase());
+                    const details = await dockerContainer.inspect();
+                    const stats = await getContainerStats(dockerContainer);
+
+                    return {
+                        ...container.toObject(),
+                        dockerStatus: details.State.Status,
+                        cpuUsage: stats.cpuUsage,
+                        memoryUsage: stats.memoryUsage
+                    }
+                }
+                catch{
+                    return {
+                        ...container.toObject(),
+                        dockerStatus: "not found",
+                        cpuUsage: "N/A",
+                        memoryUsage: "N/A"
+                    }
+                }
+            })
+        )
+
+        res.status(200).json(containerWithStatus);
     }
     catch(err){
         res.status(500).json({error: err.message});
     }
 };
 
-export const getContainerById = async(req, res) => {
-    try{
-        const container = await Container.findById(req.params.id);
-        if(!container){
-            res.status(400).json({error: "Container not found"})
-        }
-        res.status(200).json(container);
-    }
-    catch(err){
-        res.status(500).json({error: err.message});
-    }
+export const getContainerById = async (req, res) => {
+  try {
+    const containerData = await Container.findById(req.params.id);
+    if (!containerData) return res.status(404).json({ error: "Container not found" });
+
+    let dockerStatus = "not found", stats = { memoryUsage: "N/A", cpuUsage: "N/A" };
+    try {
+      const dockerContainer = docker.getContainer(containerData.name.toLowerCase());
+      const details = await dockerContainer.inspect();
+      stats = await getContainerStats(dockerContainer);
+      dockerStatus = details.State.Status;
+    } catch {}
+
+    res.status(200).json({ 
+      ...containerData.toObject(),
+      dockerStatus,
+      ...stats
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 };
+
 
 export const startContainer = async(req, res) => {
     try{
