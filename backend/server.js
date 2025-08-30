@@ -3,10 +3,12 @@ import cors from 'cors'
 import dotenv from 'dotenv'
 import mongoose from "mongoose";
 import containerRoutes from './routes/containerRoutes.js'
+import Docker from 'dockerode';
 
 dotenv.config();
 
 const app = express();
+
 
 app.use(cors());
 app.use(express.json())
